@@ -14,13 +14,13 @@ module.exports.sendCatalogMessage = async (toNumber, whatsappToken) => {
             "interactive": {
               "type": "catalog_message",
               "body": {
-                "text": "Hi,"+ toNumber+ " Welcome to Promode Agro  quick shopping expirience."+
+                "text": "Hi,"+ toNumber+ " Welcome to Promode Agro  quick s  hopping expirience."+
                 "To start shopping, you can view our catalog and add items to purchase." 
               },
               "action": {
                 "name": "catalog_message",
                 "parameters": {
-                  "thumbnail_product_retailer_id": "860320533328    "
+                  "thumbnail_product_retailer_id": "110903215944"
                 }
               },
               "footer": {
@@ -36,7 +36,7 @@ module.exports.sendCatalogMessage = async (toNumber, whatsappToken) => {
             redirect: 'follow',
         };
  
-        const response = await axios.post("https://graph.facebook.com/v19.0/208582795666783/messages", JSON.stringify(sendCatalog), requestOptions);
+        const response = await axios.post("https://graph.facebook.com/v19.0//messages", JSON.stringify(sendCatalog), requestOptions);
         const result = response.data;
         console.log(result);
     } catch (error) {
@@ -80,7 +80,7 @@ module.exports.sendPaymentLinkButton = async (toNumber, whatsappToken,url) => {
             headers: myHeaders,
         };
  
-        const response = await axios.post("https://graph.facebook.com/v19.0/208582795666783/messages", sendPaymentLinkButtonData, requestOptions);
+        const response = await axios.post("https://graph.facebook.com/v19.0//messages", sendPaymentLinkButtonData, requestOptions);
         const result = response.data;
         console.log(result);
     } catch (error) {

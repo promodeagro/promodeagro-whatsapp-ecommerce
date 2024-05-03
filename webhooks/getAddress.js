@@ -1,5 +1,14 @@
 const axios = require('axios');
 const {client} = require('./db')
+const AWS = require('aws-sdk');
+
+AWS.config.update({
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    region: process.env.AWS_REGION
+});
+
+const dynamodb = new AWS.DynamoDB.DocumentClient();
 
 require('dotenv').config();
 
@@ -83,7 +92,7 @@ async function sendAddressMessageWithSavedAddresses(toNumber, whatsappToken, use
 
         // Send the address message with saved addresses
 
-        const response = await axios.post("https://graph.facebook.com/v19.0/208582795666783/messages", messageData, requestOptions);
+        const response = await axios.post("https://graph.facebook.com/v19.0//messages", messageData, requestOptions);
         const result = response.data;
 
         console.log("Address message with saved addresses sent successfully:", result);
