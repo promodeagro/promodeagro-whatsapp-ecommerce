@@ -16,30 +16,16 @@ const dynamodb = new AWS.DynamoDB.DocumentClient();
 
 // Import the getSession and updateSession functions
 async function getSession(senderId) {
-    try {
-        const params = {
-            TableName: 'sessions', // Specify the table name
-            Key: { 'sender_id': senderId } // Define the primary key
-        };
-
-        console.log('Getting session for senderId:', senderId);
-
-        const result = await dynamodb.get(params).promise();
-
-        console.log('Result:', result);
-
-        if (!result.Item || !result.Item.session_data || !result.Item.session_data.S) {
-            // If session_data attribute does not exist or is undefined, return default session object
-            console.log('Session not found for senderId:', senderId);
-            return { incompleteOrderAlertSent: false, cart: { items: [] } };
+    const params = {
+        TableName: 'sessions',
+        Key: {
+            'sender_id': senderId
         }
+    };
 
-        // Parse session_data attribute from JSON string to JavaScript object
-        const sessionData = JSON.parse(result.Item.session_data.S);
-
-        console.log('Session found for senderId:', senderId, 'Session Data:', sessionData);
-
-        return sessionData;
+    try {
+        const result = await dynamodb.get(params).promise();
+        return result.Item ? result.Item.session_data : {};
     } catch (error) {
         console.error('Error getting session from DynamoDB:', error);
         throw error;
@@ -49,14 +35,21 @@ async function getSession(senderId) {
 
 
 // Function to update session in DynamoDB
-async function updateSession(senderId, session) {
+async function updateSession(senderId, newSessionData) {
     try {
+        // Fetch existing session data
+        const existingSession = await getSession(senderId);
+
+        // Merge existing session data with new session data
+        const mergedSession = { ...existingSession, ...newSessionData };
+
+        // Update session in DynamoDB with merged session data
         const params = {
             TableName: 'sessions', // Specify the table name
             Key: { 'sender_id': senderId }, // Define the primary key
             UpdateExpression: 'SET session_data = :data', // Update expression
             ExpressionAttributeValues: {
-                ':data': session // No need to stringify here
+                ':data': mergedSession // Update with merged session data
             },
             ReturnValues: 'ALL_NEW' // Specify what to return after the update
         };
@@ -202,15 +195,15 @@ async function sendReply(phone_number_id, whatsapp_token, to, reply_message) {
                                             
                                                     case 'order':
     // Check if the order message contains product items
-        const messageOrder = message.order.product_items;
-        const newCartItems = messageOrder.map(item => ({
-            productId: item.product_retailer_id,
-            quantity: item.quantity,
-            price: item.item_price
-            // Add other details as needed
-        }));
+                                                    const messageOrder = message.order.product_items;
+                                                    const newCartItems = messageOrder.map(item => ({
+                                                        productId: item.product_retailer_id,
+                                                        quantity: item.quantity,
+                                                        price: item.item_price
+                                                        // Add other details as needed
+                                                    }));
 
-        if (!session.cart || !session.cart.items) {
+                                                    if (!session.cart || !session.cart.items) {
                                                     // If no existing cart items, initialize the cart with the new items
                                                     session.cart = { items: newCartItems };
                                                 } else {
@@ -232,56 +225,65 @@ async function sendReply(phone_number_id, whatsapp_token, to, reply_message) {
         
         // Check if there is an incomplete order after a delay
         setTimeout(async () => {
+            // Fetch the previous incomplete order
             const previousOrder = await getPreviousIncompleteOrder(senderId);
-
-            if (session && session.cart && session.cart.items && session.cart.items.length > 0 && incompleteOrderAlertSent) {
-                // Handle incomplete order
-                const incompleteOrderTotal = calculateTotalAmount(previousOrder.cart);
-                const incompleteOrderMessage = `Your previous order is incomplete. Total amount: ${incompleteOrderTotal}. Please choose an option:`;
-
-                // Define the options with merge and continue buttons
-                const options = {
-                    messaging_product: "whatsapp",
-                    recipient_type: "individual",
-                    to: senderId,
-                    type: "interactive",
-                    interactive: {
-                        type: "button",
-                        body: {
-                            text: incompleteOrderMessage
-                        },
-                        action: {
-                            buttons: [
-                                {
-                                    type: "reply",
-                                    reply: {
-                                        id: "merge_button",
-                                        title: "Merge Order"
+            
+            if (session && session.cart && session.cart.items && session.cart.items.length > 0) {
+                // Check if there's an incomplete order alert already sent
+                if (incompleteOrderAlertSent) {
+                    // If incompleteOrderAlertSent is true, send the button template for incomplete order
+                    const incompleteOrderTotal = calculateTotalAmount(previousOrder.cart);
+                    const incompleteOrderMessage = `Your previous order is incomplete. Total amount: ${incompleteOrderTotal}. Please choose an option:`;
+        
+                    // Define the options with merge and continue buttons
+                    const options = {
+                        messaging_product: "whatsapp",
+                        recipient_type: "individual",
+                        to: senderId,
+                        type: "interactive",
+                        interactive: {
+                            type: "button",
+                            body: {
+                                text: incompleteOrderMessage
+                            },
+                            action: {
+                                buttons: [
+                                    {
+                                        type: "reply",
+                                        reply: {
+                                            id: "merge_button",
+                                            title: "Merge Order"
+                                        }
+                                    },
+                                    {
+                                        type: "reply",
+                                        reply: {
+                                            id: "continue_button",
+                                            title: "Continue Order"
+                                        }
                                     }
-                                },
-                                {
-                                    type: "reply",
-                                    reply: {
-                                        id: "continue_button",
-                                        title: "Continue Order"
-                                    }
-                                }
-                            ]
+                                ]
+                            }
                         }
-                    }
-                };
-
-                await sendButtons(WHATSAPP_TOKEN, options);
-
-                // Set the incomplete order alert flag to true
-                await setIncompleteOrderAlertSent(senderId, true);
+                    };
+        
+                    await sendButtons(WHATSAPP_TOKEN, options);
+                } else {
+                    // If incompleteOrderAlertSent is false, send the address template directly
+                    const userDetails = await getUserAddressFromDatabase(senderId);
+                    await sendAddressMessageWithSavedAddresses(senderId, WHATSAPP_TOKEN, userDetails);
+                    // Set incompleteOrderAlertSent to true after sending the address template
+                    await setIncompleteOrderAlertSent(senderId, true);
+                }
             } else {
-                // If there is no incomplete order, send the address directly
-                //await setIncompleteOrderAlertSent(senderId, true);
+                // If there are no items in the cart, send the address template directly
                 const userDetails = await getUserAddressFromDatabase(senderId);
                 await sendAddressMessageWithSavedAddresses(senderId, WHATSAPP_TOKEN, userDetails);
+                // Set incompleteOrderAlertSent to true after sending the address template
+                await setIncompleteOrderAlertSent(senderId, true);
             }
-        }, 1000); // 1 second delay
+        }, 1000);
+        
         break;
 
     case 'catalog_sent':
