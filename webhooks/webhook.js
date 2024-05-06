@@ -191,191 +191,165 @@ async function sendReply(phone_number_id, whatsapp_token, to, reply_message) {
                                                     await sendReply(phone_number_id, WHATSAPP_TOKEN, senderId, reply_message);
                                                     await sendCatalogMessage(senderId, WHATSAPP_TOKEN);
                                                     break;
-                                        
                                             
-                                                    case 'order':
-    // Check if the order message contains product items
-                                                    const messageOrder = message.order.product_items;
-                                                    const newCartItems = messageOrder.map(item => ({
+                                                case 'order':
+                                                    // Check if the order message contains product items
+                                                    const productItems = message.order.product_items;
+                                                    
+                                                    // Store the product items in a variable
+                                                    const newCartItems = productItems.map(item => ({
                                                         productId: item.product_retailer_id,
                                                         quantity: item.quantity,
-                                                        price: item.item_price
+                                                        price: item.item_price,
                                                         // Add other details as needed
                                                     }));
-
+                                                    console.log('New Cart Items:', JSON.stringify(newCartItems));
+                                                    // Fetch previous incomplete orders
+                                                    const previousOrders = await getPreviousIncompleteOrder(senderId);
+                                            
+                                                    // Check if there are existing cart items
                                                     if (!session.cart || !session.cart.items) {
-                                                    // If no existing cart items, initialize the cart with the new items
-                                                    session.cart = { items: newCartItems };
-                                                } else {
-                                                    // If existing cart items, append the new items to the existing list
-                                                    session.cart.items.push(...newCartItems);
-                                                }
+                                                        // If no existing cart items, initialize the cart with the new items
+                                                        session.cart = { items: newCartItems };
+                                                    } else {
+                                                        // If existing cart items, append the new items to the existing list
+                                                        session.cart.items.push(...newCartItems);
+                                                    }
+                                                    console.log('Updated Session Cart:', JSON.stringify(session.cart));
+                                                    // Update the session
+                                                    //session = await updateSession(senderId, session);
+                                            
+                                                    // Check for incomplete orders after a delay
+                                                    setTimeout(async () => {
+                                                        try {
+                                                            // Fetch the previous incomplete order
+                                                            const previousOrder = await getPreviousIncompleteOrder(senderId);
+                                                            session = await updateSession(senderId, session);
+                                            
+                                                            if (session && session.cart && session.cart.items && session.cart.items.length > 0) {
+                                                                // Check if there's an incomplete order alert already sent
+                                                                if (incompleteOrderAlertSent) {
+                                                                    // If incompleteOrderAlertSent is true, send the button template for incomplete order
+                                                                    const incompleteOrderTotal = calculateTotalAmount(previousOrder.cart);
+                                                                    const incompleteOrderItems = previousOrder.cart.map(item => `${item.quantity} x ${item.productId} - $${item.price}`);
+                                                                    const incompleteOrderMessage = `Your previous order is incomplete. Total amount: ${incompleteOrderTotal}. Previous order items: ${incompleteOrderItems.join(', ')}. Please choose an option:`;
+                                                    
+                                                                    // Define the options with merge and continue buttons
+                                                                    const options = {
+                                                                        messaging_product: "whatsapp",
+                                                                        recipient_type: "individual",
+                                                                        to: senderId,
+                                                                        type: "interactive",
+                                                                        interactive: {
+                                                                            type: "button",
+                                                                            body: {
+                                                                                text: incompleteOrderMessage
+                                                                            },
+                                                                            action: {
+                                                                                buttons: [
+                                                                                    {
+                                                                                        type: "reply",
+                                                                                        reply: {
+                                                                                            id: "merge_button",
+                                                                                            title: "Merge Order"
+                                                                                        }
+                                                                                    },
+                                                                                    {
+                                                                                        type: "reply",
+                                                                                        reply: {
+                                                                                            id: "continue_button",
+                                                                                            title: "Continue Order"
+                                                                                        }
+                                                                                    }
+                                                                                ]
+                                                                            }
+                                                                        }
+                                                                    };
+                                                    
+                                                                    await sendButtons(WHATSAPP_TOKEN, options);
+                                                                } else {
+                                                                    // If incompleteOrderAlertSent is false, send the address template directly
+                                                                    const userDetails = await getUserAddressFromDatabase(senderId);
+                                                                    await sendAddressMessageWithSavedAddresses(senderId, WHATSAPP_TOKEN, userDetails);
+                                                                    // Set incompleteOrderAlertSent to true after sending the address template
+                                                                    await setIncompleteOrderAlertSent(senderId, true);
+                                                                }
+                                                            } else {
+                                                                // If there are no items in the cart, send the address template directly
+                                                                const userDetails = await getUserAddressFromDatabase(senderId);
+                                                                await sendAddressMessageWithSavedAddresses(senderId, WHATSAPP_TOKEN, userDetails);
+                                                                // Set incompleteOrderAlertSent to true after sending the address template
+                                                                await setIncompleteOrderAlertSent(senderId, true);
+                                                            }
+                                                        } catch (error) {
+                                                            console.error('Error processing incomplete order:', error);
+                                                        }
+                                                    }, 1000);
+                                            
+                                                    break;
+                                            
+                                            
+                                                    case 'interactive':
+    if (message.interactive.type === 'button_reply') {
+        // Handle button reply
+        const buttonReplyId = message.interactive.button_reply.id;
+        switch (buttonReplyId) {
+            case 'continue_button':
+                // Handle continue button action
+                // Reset the incomplete order flag
+                incompleteOrderAlertSent = false;
+                // Update the session to clear incomplete order flag
+                session.incompleteOrderAlertSent = false;
+                // Save the updated session
+                session = await updateSession(senderId, session);
+                // Update the incomplete order alert flag in the database
+                await setIncompleteOrderAlertSent(senderId, false);
 
-                                                // Save the updated session
-                                                session = await updateSession(senderId, session);
+                // Debugging information
+                console.log('Debugging information:');
+                console.log('message:', message);
 
-       // Get the current session
-       // Get the current session
-// Get the current session
+                // Check if message.order exists
+                if (message.order && message.order.product_items && Array.isArray(message.order.product_items) && message.order.product_items.length > 0) {
+                    // Define newCartItems and print recently added cart items to console
+                    const newCartItems = message.order.product_items.map(item => ({
+                        productId: item.product_retailer_id,
+                        quantity: item.quantity,
+                        price: item.item_price
+                    }));
 
-
-
-    
-
-        
-        // Check if there is an incomplete order after a delay
-        setTimeout(async () => {
-            // Fetch the previous incomplete order
-            const previousOrder = await getPreviousIncompleteOrder(senderId);
-            
-            if (session && session.cart && session.cart.items && session.cart.items.length > 0) {
-                // Check if there's an incomplete order alert already sent
-                if (incompleteOrderAlertSent) {
-                    // If incompleteOrderAlertSent is true, send the button template for incomplete order
-                    const incompleteOrderTotal = calculateTotalAmount(previousOrder.cart);
-                    const incompleteOrderMessage = `Your previous order is incomplete. Total amount: ${incompleteOrderTotal}. Please choose an option:`;
-        
-                    // Define the options with merge and continue buttons
-                    const options = {
-                        messaging_product: "whatsapp",
-                        recipient_type: "individual",
-                        to: senderId,
-                        type: "interactive",
-                        interactive: {
-                            type: "button",
-                            body: {
-                                text: incompleteOrderMessage
-                            },
-                            action: {
-                                buttons: [
-                                    {
-                                        type: "reply",
-                                        reply: {
-                                            id: "merge_button",
-                                            title: "Merge Order"
-                                        }
-                                    },
-                                    {
-                                        type: "reply",
-                                        reply: {
-                                            id: "continue_button",
-                                            title: "Continue Order"
-                                        }
-                                    }
-                                ]
-                            }
-                        }
-                    };
-        
-                    await sendButtons(WHATSAPP_TOKEN, options);
+                    console.log("Recently added cart items after continuing:", newCartItems);
+                    newCartItems.forEach(item => {
+                        console.log(`Product ID: ${item.productId}, Quantity: ${item.quantity}, Price: ${item.price}`);
+                        // You can add other details as needed
+                    });
+                    // Update session cart with new items
+                    if (!session.cart || !session.cart.items) {
+                        session.cart = { items: newCartItems };
+                    } else {
+                        session.cart.items.push(...newCartItems);
+                    }
                 } else {
-                    // If incompleteOrderAlertSent is false, send the address template directly
-                    const userDetails = await getUserAddressFromDatabase(senderId);
-                    await sendAddressMessageWithSavedAddresses(senderId, WHATSAPP_TOKEN, userDetails);
-                    // Set incompleteOrderAlertSent to true after sending the address template
-                    await setIncompleteOrderAlertSent(senderId, true);
+                    console.error('Unable to retrieve valid product items from the continue button action.');
+                    console.log('message.order:', message.order);
                 }
-            } else {
-                // If there are no items in the cart, send the address template directly
+
+                // After handling the button response, send the address button
                 const userDetails = await getUserAddressFromDatabase(senderId);
                 await sendAddressMessageWithSavedAddresses(senderId, WHATSAPP_TOKEN, userDetails);
-                // Set incompleteOrderAlertSent to true after sending the address template
-                await setIncompleteOrderAlertSent(senderId, true);
-            }
-        }, 1000);
-        
-        break;
-
-    case 'catalog_sent':
-        // Handle catalog sent message
-        // Add your logic here to process the catalog sent message
-        console.log('Catalog sent:', message);
-        // Example: You can trigger some action after the catalog is sent
-        break;
-
-    case 'interactive':
-        if (message.interactive.type === 'nfm_reply') {
-            // Process the interactive message
-            // Reset the incomplete order flag when the order is completed
-            incompleteOrderAlertSent = false;
-            // Continue with regular processing
-            const responseJson = JSON.parse(message.interactive.nfm_reply.response_json);
-            await storeUserResponse(senderId, responseJson);
-            const orders = session.cart.items;
-            // Calculate total price based on the extracted orders
-            const totalPrice = calculateTotalPrice(orders);
-            let paymentLink = await createPaymentLink.createPaymentLink(totalPrice);
-            sendPaymentLinkButton(senderId, WHATSAPP_TOKEN, paymentLink.short_url);
-            // Save the updated session
-            session = await updateSession(senderId, session);
-            // Reset the incomplete order flag when the order is completed
-            incompleteOrderAlertSent = false;
-            // Update the flag in the database
-            await setIncompleteOrderAlertSent(senderId, false);
-        } else if (message.interactive.type === 'button_reply') {
-            // Handle button reply
-            const buttonReplyId = message.interactive.button_reply.id;
-            switch (buttonReplyId) {
-                case 'merge_button':
-                    // Handle merge button action
-                    const previousOrder = await getPreviousIncompleteOrder(senderId);
-                    if (previousOrder && previousOrder.flag && session && session.incompleteOrderAlertSent) {
-                        session.cart = mergeCarts(session.cart, previousOrder.cart);
-                        incompleteOrderAlertSent = false; // Reset the incomplete order flag
-                        // Update the session and set the incomplete order alert flag
-                        session = await updateSession(senderId, session);
-                        await setIncompleteOrderAlertSent(senderId, false);
-                    } else {
-                        // Handle the case when previous order doesn't exist or conditions are not met
-                        console.error('Previous order not found or conditions not met');
-                    }
-                    break;
-                    case 'continue_button':
-    // Reset the incomplete order flag
-    incompleteOrderAlertSent = false;
-    // Update the session to clear incomplete order flag
-    session.incompleteOrderAlertSent = false;
-    // Save the updated session
-    session = await updateSession(senderId, session);
-    // Update the incomplete order alert flag in the database
-    await setIncompleteOrderAlertSent(senderId, false);
-
-    console.log('Debugging information:');
-    console.log('message:', message);
-
-    // Check if message.order exists
-    if (message.order && message.order.product_items && Array.isArray(message.order.product_items) && message.order.product_items.length > 0) {
-        // Define newCartItems and print recently added cart items to console
-        const newCartItems = message.order.product_items.map(item => ({
-            productId: item.product_retailer_id,
-            quantity: item.quantity,
-            price: item.item_price
-        }));
-
-        console.log("Recently added cart items after continuing:");
-        newCartItems.forEach(item => {
-            console.log(`Product ID: ${item.productId}, Quantity: ${item.quantity}, Price: ${item.price}`);
-            // You can add other details as needed
-        });
-    } else {
-        console.error('Unable to retrieve valid product items from the continue button action.');
-        console.log('message.order:', message.order);
+                break;
+        }
     }
     break;
 
-
-
-           }
-            // After handling the button response, send the address button
-            const userDetails = await getUserAddressFromDatabase(senderId);
-            await sendAddressMessageWithSavedAddresses(senderId, WHATSAPP_TOKEN, userDetails);
-        }
-        break;
-
-    default:
-        // Handle unknown message types gracefully
-        console.error('Unknown message type:', message.type);
-        break;
+                                                    
+            
+        
+        default:
+            // Handle unknown message types gracefully
+            console.error('Unknown message type:', message.type);
+            break;
+        
                                                                                                     }
 
                                                         // After handling the button response, send the address button
@@ -419,7 +393,24 @@ async function sendReply(phone_number_id, whatsapp_token, to, reply_message) {
                         return totalAmount;
                     }
                     // Example implementation of processOrderItems function
-
+                    function formatMergeCartMessage(previousOrderCart) {
+                        // Initialize an empty string to store the formatted message
+                        let message = 'Previous Order Items:\n';
+                    
+                        // Loop through each item in the previous order cart
+                        previousOrderCart.forEach((item, index) => {
+                            // Format the item details
+                            const itemDetails = `Product ID: ${item.productId}, Quantity: ${item.quantity}, Price: ${item.price}\n`;
+                            // Append the formatted item details to the message
+                            message += itemDetails;
+                            console.log('message'+message);
+                        });
+                    
+                        // Return the formatted message
+                        return message;
+                        
+                    }
+                    
 // Example implementation of calculateTotalPrice function
 function calculateTotalPrice(orders) {
     // Check if orders is null or undefined
