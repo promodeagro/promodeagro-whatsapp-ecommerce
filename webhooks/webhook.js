@@ -290,10 +290,51 @@ async function sendReply(phone_number_id, whatsapp_token, to, reply_message) {
                                             
                                             
                                                     case 'interactive':
-    if (message.interactive.type === 'button_reply') {
-        // Handle button reply
-        const buttonReplyId = message.interactive.button_reply.id;
-        switch (buttonReplyId) {
+                                                 
+                                                            if (message.interactive.type === 'nfm_reply') {
+                                                                // Process the interactive message
+                                                                // Reset the incomplete order flag when the order is completed
+                                                                incompleteOrderAlertSent = false;
+                                                                // Continue with regular processing
+                                                                const responseJson = JSON.parse(message.interactive.nfm_reply.response_json);
+                                                                await storeUserResponse(senderId, responseJson);
+                                                                const orders = session.cart.items;
+                                                                // Calculate total price based on the extracted orders
+                                                                const totalPrice = calculateTotalPrice(orders);
+                                                                let paymentLink = await createPaymentLink.createPaymentLink(totalPrice);
+                                                                sendPaymentLinkButton(senderId, WHATSAPP_TOKEN, paymentLink.short_url);
+                                                                // Save the updated session
+                                                                session = await updateSession(senderId, session);
+                                                                // Reset the incomplete order flag when the order is completed
+                                                                incompleteOrderAlertSent = false;
+                                                                // Update the flag in the database
+                                                                await setIncompleteOrderAlertSent(senderId, false);
+                                                            } else if (message.interactive.type === 'button_reply') {
+                                                                // Handle button reply
+                                                                const buttonReplyId = message.interactive.button_reply.id;
+                                                                switch (buttonReplyId) {
+                                                                    case 'merge_button':
+                                                                        // Handle merge button action
+                                                                        const previousOrder = await getPreviousIncompleteOrder(senderId);
+                                                                        if (previousOrder && previousOrder.flag && previousOrder.cart.length > 0) {
+                                                                            // Check if previous order exists and the flag is true
+                                                                            // Merge the carts and update the session
+                                                                            session.cart.items = mergeCarts(session.cart.items, previousOrder.cart);
+                                                                            // Prepare the merge cart message
+                                                                            const mergeCartMessage = formatMergeCartMessage(previousOrder.cart);
+                                                                            // Send the merge cart message to the user
+                                                                            await sendMergeCartTemplate(senderId, mergeCartMessage);
+                                                                            // Reset the incomplete order flag
+                                                                            incompleteOrderAlertSent = false;
+                                                                            // Update the session and set the incomplete order alert flag
+                                                                            session = await updateSession(senderId, session);
+                                                                            await setIncompleteOrderAlertSent(senderId, false);
+                                                                        } else {
+                                                                            // Handle the case when previous order doesn't exist or conditions are not met
+                                                                            console.error('Previous order not found or conditions not met');
+                                                                        }
+                                                                        break;
+                                                        
             case 'continue_button':
                 // Handle continue button action
                 // Reset the incomplete order flag
@@ -342,9 +383,7 @@ async function sendReply(phone_number_id, whatsapp_token, to, reply_message) {
     }
     break;
 
-                                                    
-            
-        
+                                                           
         default:
             // Handle unknown message types gracefully
             console.error('Unknown message type:', message.type);
