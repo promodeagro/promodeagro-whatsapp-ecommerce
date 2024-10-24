@@ -1,15 +1,16 @@
 const AWS = require('aws-sdk');
 
-AWS.config.update({
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    region: process.env.AWS_REGION
-});
+// AWS.config.update({
+//     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+//     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+//     region: process.env.AWS_REGION
+// });
 
 
 const dynamodb = new AWS.DynamoDB.DocumentClient();
 
 // Function to get the incomplete order alert flag from DynamoDB
+
 async function getIncompleteOrderAlertSent(senderId) {
     try {
         const params = {
@@ -17,13 +18,12 @@ async function getIncompleteOrderAlertSent(senderId) {
             Key: { 'sender_id': senderId }, // Define the primary key
             ProjectionExpression: 'session_data.incompleteOrderAlertSent' // Projection expression to only retrieve the flag
         };
-
         const result = await dynamodb.get(params).promise();
-
+        // Check if result.Item exists and session_data.incompleteOrderAlertSent is truthy
         if (result.Item && result.Item.session_data && result.Item.session_data.incompleteOrderAlertSent) {
-            return result.Item.session_data.incompleteOrderAlertSent === 'true'; // Convert flag to boolean
+            return true;
         } else {
-            return false; // If no item found or incompleteOrderAlertSent is undefined, return false
+            return false;
         }
     } catch (error) {
         console.error('Error retrieving incomplete order alert flag:', error);

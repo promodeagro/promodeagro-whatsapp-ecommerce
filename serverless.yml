@@ -12,8 +12,11 @@ frameworkVersion: "3"
 provider:
   name: aws
   stage: dev
+  role: arn:aws:iam::851725323791:role/ecommerce_Lambda_Role
   region: us-east-1
+  timeout: 360
   runtime: nodejs18.x
+
   
 
 # you can overwrite defaults here
@@ -51,6 +54,7 @@ provider:
 functions:
   # createProduct:
   - ${file(webhooks/function.yml)}
+  - ${file(razorpay/function.yml)}
   # - ${file(inventory/function.yml)}
   # - ${file(Products/function.yml)}
   # # #    The following are a few example events you can configure
@@ -61,12 +65,6 @@ functions:
   # - ${file(Customer/function.yml)}
   # - ${file(webhooks/function.yml)}
 
-
-
-
-
-  
-  
 
 plugins:
   - serverless-offline
