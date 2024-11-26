@@ -1,0 +1,8 @@
+sendResply:
+  handler: messages/sendReply.handler
+
+sendCatelog:
+  handler: messages/sendCatelog.handler
+
+sendCategorySelection:
+  handler: messages/sendCategorySelection.handler

@@ -8,9 +8,11 @@ const { sendButtons } = require('./merge');
 const { sendPaymentMethod } = require('./paymentMethod')
 const AWS = require('aws-sdk');
 require('dotenv').config();
+const lambda = new AWS.Lambda({ region: 'ap-south-1' }); // Replace with your region
+
 const { sendOrderConfirmation, addOrContinueButtons } = require("./sendOrderConfirmation")
 const { sendCategorySelection, sendCategoryCatlog } = require("./sendCategorySelection")
-const { fetchProductData, fetchProductDataById } = require("./fetchProducts")
+const { fetchProductData, fetchProductDataById, getProductsFromCommerceManager } = require("./fetchProducts")
 const { getCurrentCart, updateCartInDynamoDB, sendBill } = require("./manageCart")
 
 
@@ -25,6 +27,7 @@ const { getcustomer } = require("./customer");
 const { addCartItems, getUserByNumber, getCartItems, sendCurrentItems } = require("./manageCartApis.");
 const { getAllAddresses, sendAddressMessageWithSavedAddresses, setDefaultAddress, addAddress } = require("./manageAddressApi");
 const { createOrder } = require("./manageOrderApis");
+const { sendDeliverySlots, fetchAllSlots, setDefaultSlot } = require("./slots/manageSlotsApis");
 
 
 
@@ -144,7 +147,26 @@ exports.handler = async (event) => {
                                 console.log(message);
                                 console.log('====================================');
                                 let mobileNumber = senderId.slice(2)
-                                await createUserInWhatsAppCommerce(mobileNumber)
+                                // await createUserInWhatsAppCommerce(mobileNumber)
+
+
+                                // Prepare the payload for invoking sendReply
+                                const createUserpayload = {
+                                    mobileNumber: mobileNumber
+
+                                };
+
+
+
+                                const createUserParams = {
+                                    FunctionName: 'promodeagro-whatsapp-ecommerce-dev-createUserInWhatsappCommerce', // Adjust the function name based on your environment
+                                    InvocationType: 'RequestResponse', // Use 'Event' for async invocation
+                                    Payload: JSON.stringify(createUserpayload),
+                                };
+
+
+                                const createUserresult = await lambda.invoke(createUserParams).promise();
+                                console.log(createUserresult)
 
 
                                 console.log(mobileNumber);
@@ -154,7 +176,7 @@ exports.handler = async (event) => {
                                 var userId = user.UserId;
 
 
-                                let incompleteOrderAlertSent = await getIncompleteOrderAlertSent(senderId);
+
 
                                 console.log("dfedfedfedfedf")
 
@@ -164,26 +186,40 @@ exports.handler = async (event) => {
                                 switch (message.type) {
                                     case 'text':
                                         console.log('Received text message');
-                                        // Send catalog options first
-                                        // Send catalog options first
-
-                                        // Send catalog options first
-                                        const replyMessage = `Welcome to Pramode Agro Farms! 🌾
-
-Thank you for reaching out to us. How can we assist you today?
-
-For immediate assistance, feel free to call our support team at +918897399587. 
-We're here to help with any questions or concerns.
-
-Looking forward to serving you! 😊`;
-
-                                        await sendReply(phone_number_id, WHATSAPP_TOKEN, senderId, replyMessage);
+                                        // Prepare the payload for invoking sendReply
+                                        const payload = {
+                                            phone_number_id,
+                                            WHATSAPP_TOKEN,
+                                            senderId,
+                                        };
 
 
-                                        // await sendCatalogMessage(senderId, WHATSAPP_TOKEN);
-                                        await sendCategorySelection(senderId, WHATSAPP_TOKEN);
 
-                                        console.log("fsdafda")
+                                        const params = {
+                                            FunctionName: 'promodeagro-whatsapp-ecommerce-dev-sendResply', // Adjust the function name based on your environment
+                                            InvocationType: 'RequestResponse', // Use 'Event' for async invocation
+                                            Payload: JSON.stringify(payload),
+                                        };
+
+
+                                        const result = await lambda.invoke(params).promise();
+                                        console.log(result)
+                                        const categorySelectionparams = {
+                                            FunctionName: 'promodeagro-whatsapp-ecommerce-dev-sendCategorySelection', // Adjust the function name based on your environment
+                                            InvocationType: 'RequestResponse', // Use 'Event' for async invocation
+                                            Payload: JSON.stringify({
+                                                whatsappToken: WHATSAPP_TOKEN,
+                                                number: senderId,
+
+                                            }),
+                                        };
+
+
+                                        const categoriesSelectionResult = await lambda.invoke(categorySelectionparams).promise();
+
+                                        console.log(categoriesSelectionResult)
+
+                                        console.log('Text message handled successfully');
                                         break;
 
                                     case 'order':
@@ -335,8 +371,9 @@ Looking forward to serving you! 😊`;
 
                                                     console.log(cartItemsList);
 
+                                                    const slotId = user.selectedDefaultId;
 
-                                                    await createOrder(userId, user.defaultAddressId, "4f24e8cd-b3a4-4ad1-8bd4-6f7bed46e2fe", cartItemsList, "cash")
+                                                    await createOrder(userId, user.defaultAddressId, slotId, cartItemsList, "cash")
                                                     // console.log(Orders)
                                                     // console.log(Orders.orderId)
                                                     // await sendOrderConfirmation(Orders.orderId, senderId, WHATSAPP_TOKEN)
@@ -370,16 +407,20 @@ Looking forward to serving you! 😊`;
                                             if (responseJson.saved_address_id) {
                                                 console.log("existing Address");
                                                 await setDefaultAddress(userId, responseJson.saved_address_id)
+
+                                                console.log(responseJson)
                                             } else {
                                                 console.log("creating new one ")
                                                 console.log(userId)
-                                              const newAddress =  await addAddress(userId,responseJson.values)
-                                                await setDefaultAddress(userId,newAddress.addressId )
-
+                                                const newAddress = await addAddress(userId, responseJson.values)
+                                                await setDefaultAddress(userId, newAddress.addressId)
 
                                             }
+                                            await sendDeliverySlots(mobileNumber, responseJson.values.in_pin_code, responseJson.values.name, WHATSAPP_TOKEN);
 
-                                            await sendPaymentMethod(senderId, WHATSAPP_TOKEN);
+
+
+                                            // await sendPaymentMethod(senderId, WHATSAPP_TOKEN);
 
 
                                         } else if (message.interactive.type === 'list_reply') {
@@ -387,97 +428,261 @@ Looking forward to serving you! 😊`;
 
                                             const buttonReplyId = message.interactive.list_reply.id;
                                             console.log("REPLY BUTTONS")
+                                            const allSlots = await fetchAllSlots();
+                                            // console.log(allSlots);
+
+                                            let matchedSlot = null;
+
+                                            // Loop to find the matched slot dynamically
+                                            for (const slot of allSlots.slots) {
+                                                for (const shift of slot.shifts) {
+                                                    for (const slotDetails of shift.slots) {
+                                                        if (slotDetails.id === buttonReplyId) {
+                                                            matchedSlot = slotDetails;
+                                                            break;
+                                                        }
+                                                    }
+                                                    if (matchedSlot) break;
+                                                }
+                                                if (matchedSlot) break;
+                                            }
+                                            console.log(matchedSlot)
+
+                                            if (!matchedSlot) {
+                                                console.log("No matching slot found.");
+                                            } else {
+                                                // Perform actions based on the matched slot
+                                                console.log("Matched Slot ID:", matchedSlot.id);
+
+                                                // Use `if-else` instead of `switch` for dynamic conditions
+                                                if (buttonReplyId === matchedSlot.id) {
+                                                    console.log("Slots matched with ID:", matchedSlot.id);
+                                                    await setDefaultSlot(userId, matchedSlot.id)
+                                                    await sendPaymentMethod(senderId, WHATSAPP_TOKEN);
+
+
+
+                                                    // Add your logic here for the matched slot
+                                                } else {
+                                                    console.log("No matching case for the button reply ID.");
+                                                }
+                                            }
+
                                             switch (buttonReplyId) {
+
+
+
+
 
                                                 case 'Fresh Fruits':
                                                     console.log("fruits Selected")
-                                                    var products = await fetchProductData();
 
-                                                    const fruits = products.products
-                                                        .filter(product => product.category === "Fresh Fruits")
-                                                        .map((product) => product.unitPrices[0].varient_id);
+                                                    const productsParam = {
+                                                        FunctionName: 'promodeagro-whatsapp-ecommerce-dev-filterCategories', // Adjust the function name based on your environment
+                                                        InvocationType: 'RequestResponse', // Use 'Event' for synchronous invocation
+                                                        Payload: JSON.stringify({ category: "Fresh Fruits" }), // Replace with the appropriate payload
+                                                    };
+
+                                                    try {
+                                                        const productss = await lambda.invoke(productsParam).promise();
+                                                        const response = JSON.parse(productss.Payload);
+                                                        const data = JSON.parse(response.body);
+                                                        const filtredProducts = data.finalProducts;
 
 
-                                                    await sendCategoryCatlog(WHATSAPP_TOKEN, senderId, fruits, "Fresh Fruits")
+
+
+                                                        const catelogParam = {
+                                                            FunctionName: 'promodeagro-whatsapp-ecommerce-dev-sendCatelog', // Adjust the function name based on your environment
+                                                            InvocationType: 'RequestResponse', // Use 'Event' for synchronous invocation
+                                                            Payload: JSON.stringify({
+                                                                token: WHATSAPP_TOKEN, // Add your authorization token here
+                                                                phoneNumber: senderId, // Replace with the recipient's phone number
+                                                                products: filtredProducts, // Replace with the list of product IDs
+                                                                title: 'Fresh Fruits' // Add the appropriate title here
+                                                            }), // Replace with the appropriate payload
+                                                        };
+
+                                                        const sendMessage = await lambda.invoke(catelogParam).promise();
+
+                                                        // Check if the response contains the expected structure
+                                                        console.log("Filtered Categories Response:", sendMessage);
+                                                    } catch (error) {
+                                                        console.error("Error invoking Lambda function:", error.message);
+                                                        throw error;
+                                                    }
 
                                                     break;
 
-
-
                                                 case 'Bengali Special':
-                                                    console.log("fruits Selected")
-                                                    var products = await fetchProductData();
+                                                    console.log("Bengali Special Selected");
 
+                                                    const bengaliSpecialParam = {
+                                                        FunctionName: 'promodeagro-whatsapp-ecommerce-dev-filterCategories',
+                                                        InvocationType: 'RequestResponse',
+                                                        Payload: JSON.stringify({ category: "Bengali Special" }),
+                                                    };
 
-                                                    const Bengali_fruit = products.products
-                                                        .filter(product => product.category === "Bengali Special")
-                                                        .map((product) => product.unitPrices[0].varient_id);
+                                                    try {
+                                                        const productss = await lambda.invoke(bengaliSpecialParam).promise();
+                                                        const response = JSON.parse(productss.Payload);
+                                                        const data = JSON.parse(response.body);
+                                                        const filteredProducts = data.finalProducts;
 
-                                                    console.log(Bengali_fruit);
+                                                        const catelogParam = {
+                                                            FunctionName: 'promodeagro-whatsapp-ecommerce-dev-sendCatelog',
+                                                            InvocationType: 'RequestResponse',
+                                                            Payload: JSON.stringify({
+                                                                token: WHATSAPP_TOKEN,
+                                                                phoneNumber: senderId,
+                                                                products: filteredProducts,
+                                                                title: 'Bengali Special'
+                                                            }),
+                                                        };
 
-                                                    await sendCategoryCatlog(WHATSAPP_TOKEN, senderId, Bengali_fruit, "Bengali Special")
-
+                                                        const sendMessage = await lambda.invoke(catelogParam).promise();
+                                                        console.log("Filtered Categories Response:", sendMessage);
+                                                    } catch (error) {
+                                                        console.error("Error invoking Lambda function:", error.message);
+                                                        throw error;
+                                                    }
                                                     break;
 
                                                 case 'Groceries':
-                                                    console.log("fruits Selected")
+                                                    console.log("Groceries Selected");
 
-                                                    var products = await fetchProductData();
-                                                    const Groceries = products.products
-                                                        .filter(product => product.category === "Groceries")
-                                                        .map((product) => product.unitPrices[0].varient_id);
+                                                    const groceriesParam = {
+                                                        FunctionName: 'promodeagro-whatsapp-ecommerce-dev-filterCategories',
+                                                        InvocationType: 'RequestResponse',
+                                                        Payload: JSON.stringify({ category: "Groceries" }),
+                                                    };
 
-                                                    // console.log(Groceries)
+                                                    try {
+                                                        const productss = await lambda.invoke(groceriesParam).promise();
+                                                        const response = JSON.parse(productss.Payload);
+                                                        const data = JSON.parse(response.body);
+                                                        const filteredProducts = data.finalProducts;
 
-                                                    await sendCategoryCatlog(WHATSAPP_TOKEN, senderId, Groceries, "Groceries")
+                                                        const catelogParam = {
+                                                            FunctionName: 'promodeagro-whatsapp-ecommerce-dev-sendCatelog',
+                                                            InvocationType: 'RequestResponse',
+                                                            Payload: JSON.stringify({
+                                                                token: WHATSAPP_TOKEN,
+                                                                phoneNumber: senderId,
+                                                                products: filteredProducts,
+                                                                title: 'Groceries'
+                                                            }),
+                                                        };
 
+                                                        const sendMessage = await lambda.invoke(catelogParam).promise();
+                                                        console.log("Filtered Categories Response:", sendMessage);
+                                                    } catch (error) {
+                                                        console.error("Error invoking Lambda function:", error.message);
+                                                        throw error;
+                                                    }
                                                     break;
 
-
                                                 case 'Eggs Meat & Fish':
-                                                    console.log("fruits Selected")
+                                                    console.log("Eggs Meat & Fish Selected");
 
-                                                    var products = await fetchProductData();
-                                                    const EGG_Meat = products.products
-                                                        .filter(product => product.category === "Eggs Meat & Fish")
-                                                        .map((product) => product.unitPrices[0].varient_id);
+                                                    const eggsMeatFishParam = {
+                                                        FunctionName: 'promodeagro-whatsapp-ecommerce-dev-filterCategories',
+                                                        InvocationType: 'RequestResponse',
+                                                        Payload: JSON.stringify({ category: "Eggs Meat & Fish" }),
+                                                    };
 
-                                                    console.log(EGG_Meat)
+                                                    try {
+                                                        const productss = await lambda.invoke(eggsMeatFishParam).promise();
+                                                        const response = JSON.parse(productss.Payload);
+                                                        const data = JSON.parse(response.body);
+                                                        const filteredProducts = data.finalProducts;
 
-                                                    await sendCategoryCatlog(WHATSAPP_TOKEN, senderId, EGG_Meat, "Eggs")
+                                                        const catelogParam = {
+                                                            FunctionName: 'promodeagro-whatsapp-ecommerce-dev-sendCatelog',
+                                                            InvocationType: 'RequestResponse',
+                                                            Payload: JSON.stringify({
+                                                                token: WHATSAPP_TOKEN,
+                                                                phoneNumber: senderId,
+                                                                products: filteredProducts,
+                                                                title: 'Eggs Meat & Fish'
+                                                            }),
+                                                        };
 
+                                                        const sendMessage = await lambda.invoke(catelogParam).promise();
+                                                        console.log("Filtered Categories Response:", sendMessage);
+                                                    } catch (error) {
+                                                        console.error("Error invoking Lambda function:", error.message);
+                                                        throw error;
+                                                    }
                                                     break;
 
                                                 case 'Dairy':
-                                                    console.log("fruits Selected")
+                                                    console.log("Dairy Selected");
 
-                                                    var products = await fetchProductData();
-                                                    console.log(products)
+                                                    const dairyParam = {
+                                                        FunctionName: 'promodeagro-whatsapp-ecommerce-dev-filterCategories',
+                                                        InvocationType: 'RequestResponse',
+                                                        Payload: JSON.stringify({ category: "Dairy" }),
+                                                    };
 
-                                                    const Dairy = products.products
-                                                        .filter(product => product.category === "Dairy")
-                                                        .map((product) => product.unitPrices[0].varient_id);
+                                                    try {
+                                                        const productss = await lambda.invoke(dairyParam).promise();
+                                                        const response = JSON.parse(productss.Payload);
+                                                        const data = JSON.parse(response.body);
+                                                        const filteredProducts = data.finalProducts;
 
-                                                    console.log(Dairy)
+                                                        const catelogParam = {
+                                                            FunctionName: 'promodeagro-whatsapp-ecommerce-dev-sendCatelog',
+                                                            InvocationType: 'RequestResponse',
+                                                            Payload: JSON.stringify({
+                                                                token: WHATSAPP_TOKEN,
+                                                                phoneNumber: senderId,
+                                                                products: filteredProducts,
+                                                                title: 'Dairy'
+                                                            }),
+                                                        };
 
-                                                    await sendCategoryCatlog(WHATSAPP_TOKEN, senderId, Dairy, "Dairy")
-
+                                                        const sendMessage = await lambda.invoke(catelogParam).promise();
+                                                        console.log("Filtered Categories Response:", sendMessage);
+                                                    } catch (error) {
+                                                        console.error("Error invoking Lambda function:", error.message);
+                                                        throw error;
+                                                    }
                                                     break;
 
                                                 case 'Fresh Vegetables':
-                                                    console.log("fruits Selected")
+                                                    console.log("Fresh Vegetables Selected");
 
-                                                    var products = await fetchProductData();
-                                                    const Fresh_Vegetables = products.products
-                                                        .filter(product => product.category === "Fresh Vegetables")
-                                                        .map((product) => product.unitPrices[0].varient_id);
+                                                    const freshVegetablesParam = {
+                                                        FunctionName: 'promodeagro-whatsapp-ecommerce-dev-filterCategories',
+                                                        InvocationType: 'RequestResponse',
+                                                        Payload: JSON.stringify({ category: "Fresh Vegetables" }),
+                                                    };
 
-                                                    console.log(Fresh_Vegetables)
+                                                    try {
+                                                        const productss = await lambda.invoke(freshVegetablesParam).promise();
+                                                        const response = JSON.parse(productss.Payload);
+                                                        const data = JSON.parse(response.body);
+                                                        const filteredProducts = data.finalProducts;
 
-                                                    await sendCategoryCatlog(WHATSAPP_TOKEN, senderId, Fresh_Vegetables, "Fresh Vegetables")
+                                                        const catelogParam = {
+                                                            FunctionName: 'promodeagro-whatsapp-ecommerce-dev-sendCatelog',
+                                                            InvocationType: 'RequestResponse',
+                                                            Payload: JSON.stringify({
+                                                                token: WHATSAPP_TOKEN,
+                                                                phoneNumber: senderId,
+                                                                products: filteredProducts,
+                                                                title: 'Fresh Vegetables'
+                                                            }),
+                                                        };
 
+                                                        const sendMessage = await lambda.invoke(catelogParam).promise();
+                                                        console.log("Filtered Categories Response:", sendMessage);
+                                                    } catch (error) {
+                                                        console.error("Error invoking Lambda function:", error.message);
+                                                        throw error;
+                                                    }
                                                     break;
-
 
                                             }
 

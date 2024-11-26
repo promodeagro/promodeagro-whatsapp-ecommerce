@@ -1,4 +1,5 @@
 const axios = require('axios');
+require('dotenv').config();
 const AWS = require('aws-sdk');
 
 const dynamodb = new AWS.DynamoDB.DocumentClient();
@@ -8,7 +9,7 @@ async function fetchProductData() {
     method: 'get',
     maxBodyLength: Infinity,
     url: 'https://9ti4fcd117.execute-api.ap-south-1.amazonaws.com/product?userId=',
-    headers: { }
+    headers: {}
   };
 
   try {
@@ -24,9 +25,9 @@ async function fetchProductData() {
 
 const fetchProductDataById = async (id) => {
   const params = {
-    TableName: 'Products', 
+    TableName: 'Products',
     Key: {
-      'id': id 
+      'id': id
     }
   };
 
@@ -46,7 +47,7 @@ const fetchProductsForCart = async (currentCart) => {
       const product = await fetchProductDataById(e.productId);
       console.log(product)
 
-      
+
       // return product;
     });
 
@@ -62,8 +63,24 @@ const fetchProductsForCart = async (currentCart) => {
 
 
 
+async function getProductsFromCommerceManager() {
+  try {
+    const response = await axios.get(`${process.env.FACEBOOK_GRAPH_API_URL}/${process.env.CATALOG_ID}/products`, {
+      params: {
+        access_token: process.env.whatsapp_Token,
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching products from Commerce Manager:", error.message);
+    throw error;
+  }
+}
+
+
 module.exports = {
-    fetchProductData,
-    fetchProductDataById,
-    fetchProductsForCart
+  getProductsFromCommerceManager,
+  fetchProductData,
+  fetchProductDataById,
+  fetchProductsForCart
 };

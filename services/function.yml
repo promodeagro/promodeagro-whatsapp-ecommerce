@@ -1,0 +1,5 @@
+createUserInWhatsappCommerce:
+  handler: services/createUser.handler
+
+filterCategories:
+  handler: services/filterCategories.handler

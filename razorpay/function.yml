@@ -1,6 +1,0 @@
- razorpayWebhook:
-   handler:  razorpay/handler.webhookHandler
-   events:
-     - httpApi:
-         path: /razorpayWebhook
-         method: POST
