@@ -1,6 +1,8 @@
- webhook:
-   handler:  webhooks/webhook.handler
-   events:
-     - httpApi:
-         path: /webhook
-         method: ANY
+webhook:
+  handler: webhooks/webhook.handler
+  # reservedConcurrency: 5 # Keep 5 instances warm
+  memorySize: 1024 # Set memory size to 1024 MB (1 GB)
+  events:
+    - httpApi:
+        path: /webhook
+        method: ANY

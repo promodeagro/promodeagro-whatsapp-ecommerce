@@ -17,7 +17,7 @@ exports.handler = async (event) => {
 
         // Invoke the getAllProduct Lambda function
         const productsParam = {
-            FunctionName: 'promodeAgro-ecommerce-api-prod-getAllProduct', // Adjust the function name
+            FunctionName: 'promodeAgro-ecommerce-api-prod-demoPrducts', // Adjust the function name
             InvocationType: 'RequestResponse',
         };
 

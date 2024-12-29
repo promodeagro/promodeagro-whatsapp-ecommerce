@@ -109,11 +109,55 @@ async function sendCurrentItems(senderId, token, items) {
     }
 }
 
+async function sendPreviousCart(senderId, token, items) {
+    // Check if items is an array and not empty
+    if (!Array.isArray(items) || items.length === 0) {
+        throw new Error('Invalid input: items is required and must be a non-empty array');
+    }
+
+    try {
+        // Format the items into a string (excluding the image)
+        let itemsList = items.map(item => 
+            `${item.productName}\nPrice: ${item.Subtotal}   Quantity: ${item.Quantity}`
+        ).join('\n\n');
+
+        // Create the message body
+        let messageBody = `Privious items in your cart:\n\n${itemsList}`;
+
+        let data = JSON.stringify({
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": senderId, // Recipient's number
+            "type": "text",
+            "text": {
+                "body": messageBody
+            }
+        });
+
+        let config = {
+            method: 'post',
+            maxBodyLength: Infinity,
+            url: 'https://graph.facebook.com/v19.0/208582795666783/messages',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}` // Bearer token for authorization
+            },
+            data: data
+        };
+
+        const response = await axios.request(config);
+        return response.data;
+    } catch (error) {
+        console.error('Error sending message:', error);
+        return { error: error.message };
+    }
+}
 
 
 
 module.exports = {
     addCartItems,
+    sendPreviousCart,
     getUserByNumber,
     getCartItems,
     sendCurrentItems

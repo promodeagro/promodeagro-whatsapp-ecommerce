@@ -22,6 +22,7 @@ async function getAllAddresses(userId) {
 
 async function sendAddressMessageWithSavedAddresses(toNumber, whatsappToken, userDetails) {
     try {
+
         let messageData;
 
         // Check if userDetails contains necessary address information
@@ -49,7 +50,7 @@ async function sendAddressMessageWithSavedAddresses(toNumber, whatsappToken, use
                 interactive: {
                     type: "address_message",
                     body: {
-                        text: "Thanks for your order! Tell us what address you'd like this order delivered to."
+                        text: "Please select the address to proceed with buying vegetables and fruits."
                     },
                     action: {
                         name: "address_message",
@@ -61,6 +62,8 @@ async function sendAddressMessageWithSavedAddresses(toNumber, whatsappToken, use
                 }
             };
         } else {
+            console.log("Address not present");
+
             messageData = {
                 messaging_product: "whatsapp",
                 recipient_type: "individual",
@@ -90,7 +93,7 @@ async function sendAddressMessageWithSavedAddresses(toNumber, whatsappToken, use
 
         console.log("Sending address message with saved addresses to number:", toNumber);
 
-        const response = await axios.post("https://graph.facebook.com/v19.0/208582795666783/messages", messageData, { headers: myHeaders });
+        const response = await axios.post("https://graph.facebook.com/v21.0/208582795666783/messages", messageData, { headers: myHeaders });
         const result = response.data;
 
         console.log("Address message with saved addresses sent successfully:", result);
@@ -166,6 +169,7 @@ async function addAddress(userId, address) {
         console.error(error);
     }
 }
+
 
 
 module.exports = {

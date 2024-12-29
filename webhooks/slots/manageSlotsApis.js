@@ -15,6 +15,8 @@ async function sendDeliverySlots(to, pincode, name, token) {
         console.log(pincode)
         const slotsResponse = await axios.get(`https://9ti4fcd117.execute-api.ap-south-1.amazonaws.com/slots/${pincode}`);
 
+        console.log(slotsResponse.data.slots)
+
         if (slotsResponse.status !== 200 || !slotsResponse.data.slots) {
             console.error('Failed to fetch slots:', slotsResponse.data);
             return;
@@ -79,6 +81,7 @@ async function sendDeliverySlots(to, pincode, name, token) {
         console.log('WhatsApp message sent:', JSON.stringify(response.data));
     } catch (error) {
         console.error('Error sending WhatsApp message:', error.message || error);
+        console.log(error)
     }
 }
 

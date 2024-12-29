@@ -68,6 +68,7 @@ async function sendReply(phone_number_id, whatsapp_token, to, reply_message) {
 
 
 
+
 function formatMergeCartMessage(previousOrderCart) {
     // Initialize an empty string to store the formatted message
     let message = 'Previous Order Items:\n';

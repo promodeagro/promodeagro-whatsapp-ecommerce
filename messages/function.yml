@@ -6,3 +6,11 @@ sendCatelog:
 
 sendCategorySelection:
   handler: messages/sendCategorySelection.handler
+
+sendOrderConfermation:
+  handler: messages/sendOrderConfirmation.handler
+
+
+
+sendServcieNotAvailable:
+  handler: messages/sendServiceNotAvailable.handler

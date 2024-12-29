@@ -10,10 +10,11 @@ const AWS = require('aws-sdk');
 require('dotenv').config();
 const lambda = new AWS.Lambda({ region: 'ap-south-1' }); // Replace with your region
 
-const { sendOrderConfirmation, addOrContinueButtons } = require("./sendOrderConfirmation")
-const { sendCategorySelection, sendCategoryCatlog } = require("./sendCategorySelection")
+const { sendOrderConfirmation, addOrContinueButtons, mergeOrContinueWithCart } = require("./sendOrderConfirmation")
+const { sendCategorySelection, sendCategoryCatlog } = require("../messages/sendCategorySelection")
 const { fetchProductData, fetchProductDataById, getProductsFromCommerceManager } = require("./fetchProducts")
 const { getCurrentCart, updateCartInDynamoDB, sendBill } = require("./manageCart")
+const axios = require('axios');
 
 
 
@@ -24,7 +25,7 @@ const {
 
 } = require("./commonFunctions");
 const { getcustomer } = require("./customer");
-const { addCartItems, getUserByNumber, getCartItems, sendCurrentItems } = require("./manageCartApis.");
+const { addCartItems, getUserByNumber, getCartItems, sendCurrentItems, sendPreviousCart } = require("./manageCartApis.");
 const { getAllAddresses, sendAddressMessageWithSavedAddresses, setDefaultAddress, addAddress } = require("./manageAddressApi");
 const { createOrder } = require("./manageOrderApis");
 const { sendDeliverySlots, fetchAllSlots, setDefaultSlot } = require("./slots/manageSlotsApis");
@@ -185,6 +186,24 @@ exports.handler = async (event) => {
 
                                 switch (message.type) {
                                     case 'text':
+
+
+                                        const removePayload = {
+                                            pathParameters: {
+                                                userId: userId,
+                                            }
+                                        }
+
+                                        const removeCartItemsParams = {
+                                            FunctionName: 'promodeAgro-ecommerce-api-prod-removeAllItems', // Adjust the function name based on your environment
+                                            InvocationType: 'RequestResponse', // Use 'Event' for async invocation
+                                            Payload: JSON.stringify(removePayload),
+
+                                        }
+                                        const removeItemresult = await lambda.invoke(removeCartItemsParams).promise();
+                                        console.log(removeItemresult)
+
+
                                         console.log('Received text message');
                                         // Prepare the payload for invoking sendReply
                                         const payload = {
@@ -204,6 +223,12 @@ exports.handler = async (event) => {
 
                                         const result = await lambda.invoke(params).promise();
                                         console.log(result)
+
+                                        console.log('Text message handled successfully');
+                                        const userDetails = await getAllAddresses(userId);
+                                        console.log("address")
+                                        console.log(userDetails)
+
                                         const categorySelectionparams = {
                                             FunctionName: 'promodeagro-whatsapp-ecommerce-dev-sendCategorySelection', // Adjust the function name based on your environment
                                             InvocationType: 'RequestResponse', // Use 'Event' for async invocation
@@ -219,7 +244,7 @@ exports.handler = async (event) => {
 
                                         console.log(categoriesSelectionResult)
 
-                                        console.log('Text message handled successfully');
+
                                         break;
 
                                     case 'order':
@@ -255,8 +280,6 @@ exports.handler = async (event) => {
 
                                         console.log(validMatchedProducts);
 
-
-
                                         await addCartItems(userId, validMatchedProducts)
 
 
@@ -282,19 +305,19 @@ exports.handler = async (event) => {
                                             switch (buttonReplyId) {
                                                 case 'continue_button':
                                                     // Handle continue button action
-                                                    // Reset the incomplete order flag
-                                                    incompleteOrderAlertSent = false;
-                                                    // Update the session to clear incomplete order flag
+                                                    // // Reset the incomplete order flag
+                                                    // incompleteOrderAlertSent = false;
+                                                    // // Update the session to clear incomplete order flag
 
 
-                                                    session.incompleteOrderAlertSent = false;
+                                                    // session.incompleteOrderAlertSent = false;
 
-                                                    // const responseJson = JSON.parse(message.interactive.nfm_reply.response_json);
-                                                    // await storeUserResponse(senderId, responseJson);
-                                                    // Save the updated session
-                                                    session = await updateSession(senderId, session);
-                                                    // Update the incomplete order alert flag in the database
-                                                    await setIncompleteOrderAlertSent(senderId, false);
+                                                    // // const responseJson = JSON.parse(message.interactive.nfm_reply.response_json);
+                                                    // // await storeUserResponse(senderId, responseJson);
+                                                    // // Save the updated session
+                                                    // session = await updateSession(senderId, session);
+                                                    // // Update the incomplete order alert flag in the database
+                                                    // await setIncompleteOrderAlertSent(senderId, false);
 
                                                     // Debugging information
                                                     console.log('Debugging information:');
@@ -326,8 +349,10 @@ exports.handler = async (event) => {
                                                     }
 
                                                     // After handling the button response, send the address button
-                                                    const userDetails = await getUserAddressFromDatabase(senderId);
-                                                    await sendAddressMessageWithSavedAddresses(senderId, WHATSAPP_TOKEN, userDetails);
+                                                    // const userDetails = await getAllAddresses(userId);
+                                                    // console.log("address")
+                                                    // console.log(userDetails)
+                                                    // await sendAddressMessageWithSavedAddresses(senderId, WHATSAPP_TOKEN, userDetails);
 
                                                     break;
                                                 case 'upi_button':
@@ -348,11 +373,12 @@ exports.handler = async (event) => {
                                                     console.log(Upi_cartItemsList);
 
 
-                                                    const order = await createOrder(userId, user.defaultAddressId, "4f24e8cd-b3a4-4ad1-8bd4-6f7bed46e2fe", Upi_cartItemsList, "online");
 
+                                                    const UPI_slotId = user.selectedDefaultId;
+
+                                                    const order = await createOrder(userId, user.defaultAddressId, UPI_slotId, Upi_cartItemsList, "online");
                                                     console.log(order)
-                                                    await sendPaymentLinkButton(senderId, WHATSAPP_TOKEN, order.paymentLink)
-
+                                                    await sendPaymentLinkButton(senderId, WHATSAPP_TOKEN, order.paymentLink);
                                                     break;
 
                                                 case 'cash_button':
@@ -373,21 +399,84 @@ exports.handler = async (event) => {
 
                                                     const slotId = user.selectedDefaultId;
 
-                                                    await createOrder(userId, user.defaultAddressId, slotId, cartItemsList, "cash")
+                                                    const Cashorder = await createOrder(userId, user.defaultAddressId, slotId, cartItemsList, "cash")
+                                                    console.log(Cashorder)
+                                                    const orderId = Cashorder.orderId;
+                                                    const payload = {
+                                                        phone_number_id,
+                                                        senderId,
+                                                        orderId,
+                                                        WHATSAPP_TOKEN
+                                                    };
+
+
+
+                                                    const params = {
+                                                        FunctionName: 'promodeagro-whatsapp-ecommerce-dev-sendOrderConfermation', // Adjust the function name based on your environment
+                                                        InvocationType: 'RequestResponse', // Use 'Event' for async invocation
+                                                        Payload: JSON.stringify(payload),
+                                                    };
+
+
+                                                    const result = await lambda.invoke(params).promise();
+                                                    console.log(result)
                                                     // console.log(Orders)
                                                     // console.log(Orders.orderId)
                                                     // await sendOrderConfirmation(Orders.orderId, senderId, WHATSAPP_TOKEN)
                                                     break;
 
                                                 case 'add':
-                                                    await sendCategorySelection(senderId, WHATSAPP_TOKEN);
+                                                    const categorySelectionparams = {
+                                                        FunctionName: 'promodeagro-whatsapp-ecommerce-dev-sendCategorySelection', // Adjust the function name based on your environment
+                                                        InvocationType: 'RequestResponse', // Use 'Event' for async invocation
+                                                        Payload: JSON.stringify({
+                                                            whatsappToken: WHATSAPP_TOKEN,
+                                                            number: senderId,
+
+                                                        }),
+                                                    };
+
+
+                                                    const categoriesSelectionResult = await lambda.invoke(categorySelectionparams).promise();
+                                                    console.log(categoriesSelectionResult)
                                                     break;
 
 
                                                 case 'continue':
-                                                    const userDetail = await getAllAddresses(userId);
-                                                    console.log(userDetail)
-                                                    await sendAddressMessageWithSavedAddresses(senderId, WHATSAPP_TOKEN, userDetail);
+
+                                                    //     var oldItems = await getCartItems(userId);
+
+
+                                                    //     if (oldItems.items && oldItems.items.length > 0) {
+                                                    //         console.log("Old Items")
+                                                    //         console.log(oldItems)
+
+                                                    //         await sendPreviousCart(senderId, WHATSAPP_TOKEN, oldItems.items)
+                                                    //     }
+
+                                                    //     var curret = await getCartItems(userId);
+
+
+                                                    //     if (curret.items && curret.items.length > 0) {
+                                                    //         console.log("curret Items")
+                                                    //         console.log(curret)
+
+                                                    //         await sendCurrentItems(senderId, WHATSAPP_TOKEN, curret.items)
+                                                    //     }
+
+
+                                                    //    const test =  await mergeOrContinueWithCart(senderId,WHATSAPP_TOKEN);
+                                                    const userDetails = await getAllAddresses(userId);
+
+                                                    await sendAddressMessageWithSavedAddresses(senderId, WHATSAPP_TOKEN, userDetails);
+
+                                                    // const seletedAddress = await axios.get(`https://9ti4fcd117.execute-api.ap-south-1.amazonaws.com/getDefaultAddress/${userId}`);
+
+                                                    // console.log(seletedAddress)
+                                                    // await sendDeliverySlots(mobileNumber, seletedAddress.data.zipCode, seletedAddress.data.name, WHATSAPP_TOKEN);
+
+
+
                                                     break;
 
 
@@ -416,7 +505,53 @@ exports.handler = async (event) => {
                                                 await setDefaultAddress(userId, newAddress.addressId)
 
                                             }
-                                            await sendDeliverySlots(mobileNumber, responseJson.values.in_pin_code, responseJson.values.name, WHATSAPP_TOKEN);
+                                            const slotsResponse = await axios.get(`https://9ti4fcd117.execute-api.ap-south-1.amazonaws.com/slots/${responseJson.values.in_pin_code}`);
+                                            console.log(slotsResponse)
+                                            if (slotsResponse.data.slots && slotsResponse.data.slots.length > 0) {
+                                                console.log("available slots")
+                                                await sendDeliverySlots(mobileNumber, responseJson.values.in_pin_code, responseJson.values.name, WHATSAPP_TOKEN);
+                                                // const categorySelectionparams = {
+                                                //     FunctionName: 'promodeagro-whatsapp-ecommerce-dev-sendCategorySelection', // Adjust the function name based on your environment
+                                                //     InvocationType: 'RequestResponse', // Use 'Event' for async invocation
+                                                //     Payload: JSON.stringify({
+                                                //         whatsappToken: WHATSAPP_TOKEN,
+                                                //         number: senderId,
+
+                                                //     }),
+                                                // };
+
+
+                                                // const categoriesSelectionResult = await lambda.invoke(categorySelectionparams).promise();
+
+                                                // console.log(categoriesSelectionResult)
+
+
+                                            } else {
+
+                                                const pincode = responseJson.values.in_pin_code;
+                                                const payload = {
+                                                    phone_number_id: phone_number_id,
+                                                    senderId: senderId,
+                                                    WHATSAPP_TOKEN: WHATSAPP_TOKEN,
+                                                    in_pin_code: pincode
+
+                                                };
+
+
+                                                console.log(pincode)
+                                                const params = {
+                                                    FunctionName: 'promodeagro-whatsapp-ecommerce-dev-sendServcieNotAvailable', // Adjust the function name based on your environment
+                                                    InvocationType: 'RequestResponse', // Use 'Event' for async invocation
+                                                    Payload: JSON.stringify(payload),
+                                                };
+
+
+                                                const result = await lambda.invoke(params).promise();
+                                                console.log(result)
+                                                console.log("not available slots")
+
+                                            }
+
 
 
 
